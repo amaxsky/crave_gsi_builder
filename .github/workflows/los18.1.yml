@@ -1,0 +1,268 @@
+name: LineageOS 18.1 GSI Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      BUILD_VARIANT:
+        description: 'Choose GSI variant to build:'
+        required: true
+        default: '64B'
+        type: choice
+        options:
+          - '32B'
+          - '32BO'
+          - 'A64B'
+          - 'A64BG'
+          - 'A64BO'
+          - '64B'
+          - '64BG'
+          - 'all'
+      CLEAN_BUILD:
+        description: 'Force clean build? (Avoid unless necessary)'
+        required: true
+        default: 'no'
+        type: choice
+        options: 
+          - 'no'
+          - 'yes'
+
+jobs:
+  Start-Runner:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tmux
+
+      - name: Configure the 'crave' environment
+        run: |
+          if [ "${DCDEVSPACE}" == "1" ]; then
+            echo 'No need to set up crave, we are already running in devspace!'
+          else
+            mkdir ${HOME}/bin/
+            curl -s https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s --
+            mv ${PWD}/crave ${HOME}/bin/
+            sudo ln -sf /home/${USER}/bin/crave /usr/bin/crave
+            envsubst < ${PWD}/crave.conf.sample >> ${PWD}/crave.conf
+            rm -rf ${PWD}/crave.conf.sample
+          fi
+        env:
+          CRAVE_USERNAME: ${{ secrets.CRAVE_USERNAME }}
+          CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}
+
+      - name: Run crave devspace
+        run: |
+          crave ${{ secrets.CRAVE_FLAGS }} devspace -- "
+          if tmux has-session -t ghactionsokbuddy; then 
+            echo 'Runner is already Running' 
+          else 
+            tmux kill-session -t ghactionsokbuddy 2>/dev/null || true
+            tmux new-session -d -s ghactionsokbuddy 
+            tmux send-keys -t ghactionsokbuddy './actions-runner-okbuddy/run.sh' Enter 
+            echo 'Runner Started'
+          fi
+          "
+
+  build:
+    name: Build LineageOS 18.1 GSI
+    needs: Start-Runner
+    timeout-minutes: 1440
+    runs-on: self-hosted
+    concurrency:
+      group: ${{ github.actor }}
+    
+    steps:
+      - name: Display Build Info
+        run: |
+          echo "::group::Build Configuration"
+          echo "Build Variant: ${{ github.event.inputs.BUILD_VARIANT }}"
+          echo "Clean Build: ${{ github.event.inputs.CLEAN_BUILD }}"
+          echo "::endgroup::"
+
+      - name: Telegram Notification - Build Started
+        continue-on-error: true
+        uses: xinthink/action-telegram@v1.1
+        with:
+          chatId: ${{ secrets.TELEGRAM_TO }}
+          botToken: ${{ secrets.TELEGRAM_TOKEN }}
+          jobStatus: "Build Started - LineageOS 18.1 GSI - Variant: ${{ github.event.inputs.BUILD_VARIANT }}"
+          skipSuccess: false
+
+      - name: Cleanup Workspace
+        run: |
+          find . -maxdepth 1 -type f -delete 2>/dev/null || true
+          find . -maxdepth 1 -type l -delete 2>/dev/null || true
+
+      - name: Setup Project Directory
+        run: |
+          PROJECTFOLDER="/crave-devspaces/Lineage18"
+          echo "PROJECTFOLDER=$PROJECTFOLDER" >> "$GITHUB_ENV"
+          
+          if [ "${DCDEVSPACE}" != "1" ]; then
+            echo "Symlinking devspace folder"
+            mkdir -p devspace
+            sudo mkdir -p /crave-devspaces
+            sudo ln -sf ${PWD}/devspace /crave-devspaces
+            sudo chmod 777 /crave-devspaces
+          else
+            echo "We are already running in devspace... Skipping Symlinks"
+          fi
+          
+          if grep -q "$PROJECTFOLDER" <(crave clone list --json | jq -r '.clones[]."Cloned At"') 2>/dev/null && [ "${DCDEVSPACE}" == "1" ]; then
+            echo "Destroying existing clone..."
+            crave clone destroy -y $PROJECTFOLDER || echo "Error removing $PROJECTFOLDER"
+          fi
+
+          if [ "${DCDEVSPACE}" == "1" ]; then
+            crave clone create --projectID 81 $PROJECTFOLDER || echo "Crave clone create failed!"
+          else
+            mkdir -p $PROJECTFOLDER
+          fi
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Git Credentials
+        run: |
+          git config --global user.name "${{ github.actor }}"
+          git config --global user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+
+      - name: Configure Crave Environment
+        run: |
+          cd $PROJECTFOLDER
+          mkdir -p .repo/manifests
+          
+          if [ "${DCDEVSPACE}" == "1" ]; then
+            echo 'No need to set up crave, we are already running in devspace!'
+          else
+            curl -s https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s --
+            mv ${PWD}/crave ${HOME}/bin/
+            sudo ln -sf /home/${USER}/bin/crave /usr/bin/crave
+            envsubst < ${PWD}/crave.conf.sample >> ${PWD}/crave.conf
+            rm -rf ${PWD}/crave.conf.sample
+            cp crave.conf ./
+          fi
+          
+          if [[ -z "${{ secrets.CUSTOM_YAML }}" ]]; then
+            cp ${GITHUB_WORKSPACE}/configs/crave/crave.yaml.aosp .repo/manifests/crave.yaml 2>/dev/null || echo "No template found, using default"
+            echo "No Custom Configuration Found, Using Template!"
+          else
+            echo "${{ secrets.CUSTOM_YAML }}" > .repo/manifests/crave.yaml
+            echo "Custom Configuration Found!"
+          fi
+        env:
+          CRAVE_USERNAME: ${{ secrets.CRAVE_USERNAME }}
+          CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}
+
+      - name: Build LineageOS 18.1 GSI
+        run: |
+          cd $PROJECTFOLDER
+          
+          jq '.projects = []' ~/crave.conf > tmp && mv tmp ~/crave.conf
+          
+          CLEAN_FLAG=""
+          if [ "${{ github.event.inputs.CLEAN_BUILD }}" == "yes" ]; then
+            CLEAN_FLAG="--clean"
+          fi
+
+          # 构建变体列表
+          if [ "${{ github.event.inputs.BUILD_VARIANT }}" == "all" ]; then
+            BUILD_TARGETS="32B 32BO A64B A64BG A64BO 64B 64BG"
+          else
+            BUILD_TARGETS="${{ github.event.inputs.BUILD_VARIANT }}"
+          fi
+
+          crave run --no-patch $CLEAN_FLAG "
+          echo '============================================'
+          echo 'LineageOS 18.1 Treble Buildbot'
+          echo 'Running via crave run - fully compliant'
+          echo 'Building variant(s): ${BUILD_TARGETS}'
+          echo '============================================'
+          echo ''
+          
+          echo '>>> Cloning treble_experimentations...'
+          git clone https://github.com/AndyCGYan/treble_experimentations ~/treble_experimentations
+          
+          echo '>>> Cloning lineage_patches_unified...'
+          git clone https://github.com/AndyCGYan/lineage_patches_unified -b lineage-18.1
+          
+          echo '>>> Cloning lineage_build_unified...'
+          git clone https://github.com/AndyCGYan/lineage_build_unified -b lineage-18.1
+          BL=\$PWD/lineage_build_unified
+          
+          echo ''
+          echo '>>> Initializing LineageOS 18.1 repository...'
+          repo init -u https://github.com/LineageOS/android.git -b lineage-18.1 --depth 1
+          
+          echo ''
+          export BUILD_USERNAME=crave_gsi
+          export BUILD_HOSTNAME=crave
+          
+          echo '>>> Running build script...'
+          bash \$BL/buildbot_unified.sh treble ${BUILD_TARGETS}
+          
+          echo ''
+          echo '============================================'
+          echo 'Build completed!'
+          echo '============================================'
+          "
+        timeout-minutes: 1440
+
+      - name: Telegram Notification - Build Status
+        if: ${{ success() || cancelled() || failure() }}
+        continue-on-error: true
+        uses: xinthink/action-telegram@v1.1
+        with:
+          chatId: ${{ secrets.TELEGRAM_TO }}
+          botToken: ${{ secrets.TELEGRAM_TOKEN }}
+          jobStatus: ${{ job.status }}
+          skipSuccess: false
+
+      - name: Stop Build if Cancelled
+        if: ${{ cancelled() }}
+        run: |
+          cd $PROJECTFOLDER
+          crave stop --all
+
+      - name: Upload Build Artifacts to GitHub
+        continue-on-error: true
+        run: |
+          cd $PROJECTFOLDER
+          echo "${{ secrets.GITHUB_TOKEN }}" > token.txt
+          crave push token.txt -d $(crave ssh -- pwd | grep -v Select | sed -s 's/\r//g')/
+          NOW=$(date '+%Y%m%d')
+          crave ssh -- "export GH_UPLOAD_LIMIT="${{ secrets.GH_UPLOAD_LIMIT }}"; bash /opt/crave/github-actions/upload.sh '${{ github.run_id }}' 'LineageOS 18.1 GSI $NOW' '${{ github.repository }}' '${{ github.run_id }}' '${{ secrets.EXTRA_FILES }}'"
+
+      - name: Display Error Log if Build Failed
+        if: ${{ failure() }}
+        run: |
+          cd $PROJECTFOLDER
+          crave ssh -- sleep 1
+          crave pull out/error.log 2>/dev/null || echo "No error.log found"
+          if [ -f out/error.log ]; then
+            echo "::group::Build Error Log"
+            cat out/error.log
+            echo "::endgroup::"
+          fi
+
+      - name: Upload to Telegram
+        continue-on-error: true
+        run: |
+          cd $PROJECTFOLDER
+          NOW=$(date '+%Y%m%d')
+          crave ssh -- "export TG_UPLOAD_LIMIT="${{ secrets.TG_UPLOAD_LIMIT }}"; bash /opt/crave/telegram/upload.sh 'LineageOS 18.1 GSI $NOW' '${{ secrets.EXTRA_FILES }}'"
+
+      - name: Clean Up Crave Clone
+        if: ${{ always() }}
+        run: |
+          if grep -q "$PROJECTFOLDER" <(crave clone list --json | jq -r '.clones[]."Cloned At"') 2>/dev/null && [ "${DCDEVSPACE}" == "1" ]; then
+            crave clone destroy -y $PROJECTFOLDER || echo "Error removing $PROJECTFOLDER"
+          else
+            if [ -d "$PROJECTFOLDER" ]; then
+              rm -rf $PROJECTFOLDER
+            fi
+          fi
