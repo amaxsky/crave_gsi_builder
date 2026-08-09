@@ -195,7 +195,7 @@ jobs:
           [ -d .repo ] || repo init -u https://github.com/LineageOS/android.git -b lineage-16.0 --depth 1
           
           echo ''
-          export BUILD_USERNAME=${{ github.actor }}
+          export BUILD_USERNAME=crave_gsi
           export BUILD_HOSTNAME=crave
           
           echo '>>> Running AndyCGYan build script...'
