@@ -1,4 +1,4 @@
-name: Crave Builder - LineageOS 16.0 GSI
+name: LineageOS 16.0 GSI Builder
 
 on:
   workflow_dispatch:
@@ -17,13 +17,13 @@ on:
           - 'treble_arm64_bvN'
           - 'all'
       CLEAN_BUILD:
-        description: 'Build with a clean workspace? (Use only if necessary)'
+        description: 'Force clean build? (Avoid unless necessary)'
         required: true
         default: 'no'
         type: choice
         options: 
-          - 'yes'
           - 'no'
+          - 'yes'
 
 jobs:
   Start-Runner:
@@ -163,88 +163,49 @@ jobs:
           
           jq '.projects = []' ~/crave.conf > tmp && mv tmp ~/crave.conf
           
+          CLEAN_FLAG=""
           if [ "${{ github.event.inputs.CLEAN_BUILD }}" == "yes" ]; then
-            export CLEAN="clean"
+            CLEAN_FLAG="--clean"
           fi
 
-          crave run --no-patch --${CLEAN} "
-          echo '============================================' && \
-          echo 'LineageOS 16.x Treble Buildbot' && \
-          echo 'Modified for foss.crave.io compliance' && \
-          echo 'Building variant: ${{ github.event.inputs.BUILD_VARIANT }}' && \
-          echo '============================================' && \
-          \
-          repo() { \
-            if echo \"\$*\" | grep -q 'sync'; then \
-              echo '>>> repo sync intercepted! Using /opt/crave/resync.sh instead...' && \
-              /opt/crave/resync.sh; \
-            else \
-              command repo \"\$@\"; \
-            fi; \
-          } && \
-          export -f repo && \
-          \
-          START=\$(date +%s) && \
-          BUILD_DATE=\"\$(date +%Y%m%d)\" && \
-          \
-          echo '>>> Cloning treble_experimentations...' && \
-          git clone https://github.com/AndyCGYan/treble_experimentations ~/treble_experimentations && \
-          \
-          echo '>>> Cloning treble_patches...' && \
-          git clone https://github.com/AndyCGYan/treble_patches treble_patches -b lineage-16.0 && \
-          \
-          echo '>>> Cloning treble_build_los...' && \
-          git clone https://github.com/AndyCGYan/treble_build_los treble_build_los -b lineage-16.0 && \
-          BL=\$PWD/treble_build_los && \
-          \
-          echo '>>> Patching build script for crave compliance...' && \
-          sed -i 's/repo sync -c --force-sync --no-clone-bundle --no-tags -j\$(nproc --all)/echo \"Skipping repo sync - using pre-synced source\"/' \$BL/buildbot_treble.sh && \
-          sed -i 's/repo sync.*/echo \"Skipping repo sync - using pre-synced source\"/' \$BL/buildbot_treble.sh && \
-          \
-          echo '>>> Initializing repository...' && \
-          [ -d .repo ] || repo init -u https://github.com/LineageOS/android.git -b lineage-16.0 --depth 1 && \
-          \
-          echo '>>> Syncing repositories with /opt/crave/resync.sh...' && \
-          /opt/crave/resync.sh && \
-          \
-          export BUILD_USERNAME=${{ github.actor }} && \
-          export BUILD_HOSTNAME=crave && \
-          export WITHOUT_CHECK_API=true && \
-          export WITH_SU=true && \
-          mkdir -p ~/build-output/ && \
-          \
-          buildVariant() { \
-            echo \"Building variant: \${1}\" && \
-            lunch \${1}-userdebug && \
-            make installclean && \
-            make -j\$(nproc --all) systemimage && \
-            make vndk-test-sepolicy && \
-            mv \$OUT/system.img ~/build-output/lineage-16.0-\$BUILD_DATE-UNOFFICIAL-\${1}.img && \
-            echo \"Completed: \${1}\"; \
-          } && \
-          \
-          if [ '${{ github.event.inputs.BUILD_VARIANT }}' = 'all' ]; then \
-            echo 'Building ALL variants...' && \
-            buildVariant treble_arm_avN && \
-            buildVariant treble_arm_bvN && \
-            buildVariant treble_a64_avN && \
-            buildVariant treble_a64_bvN && \
-            buildVariant treble_arm64_avN && \
-            buildVariant treble_arm64_bvN; \
-          else \
-            buildVariant ${{ github.event.inputs.BUILD_VARIANT }}; \
-          fi && \
-          \
-          echo '============================================' && \
-          echo 'Build completed!' && \
-          echo 'Output files:' && \
-          ls -lh ~/build-output/ | grep 'lineage' && \
-          echo '============================================' && \
-          \
-          END=\$(date +%s) && \
-          ELAPSEDM=\$(((\$END-\$START)/60)) && \
-          ELAPSEDS=\$(((\$END-\$START)-\$ELAPSEDM*60)) && \
-          echo \"Buildbot completed in \$ELAPSEDM minutes and \$ELAPSEDS seconds\"
+          crave run --no-patch $CLEAN_FLAG "
+          echo '============================================'
+          echo 'LineageOS 16.x Treble Buildbot'
+          echo 'Running via crave run - fully compliant'
+          echo 'Building variant: ${{ github.event.inputs.BUILD_VARIANT }}'
+          echo '============================================'
+          echo ''
+          
+          echo '>>> Cloning treble_experimentations...'
+          git clone https://github.com/AndyCGYan/treble_experimentations ~/treble_experimentations
+          
+          echo '>>> Cloning treble_patches...'
+          git clone https://github.com/AndyCGYan/treble_patches -b lineage-16.0
+          
+          echo '>>> Cloning treble_build_los...'
+          git clone https://github.com/AndyCGYan/treble_build_los -b lineage-16.0
+          BL=\$PWD/treble_build_los
+          
+          echo ''
+          echo '>>> Preparing local manifest...'
+          mkdir -p .repo/local_manifests
+          cp \$BL/manifest.xml .repo/local_manifests/manifest.xml
+          
+          echo '>>> Initializing repository (if needed)...'
+          [ -d .repo ] || repo init -u https://github.com/LineageOS/android.git -b lineage-16.0 --depth 1
+          
+          echo ''
+          export BUILD_USERNAME=${{ github.actor }}
+          export BUILD_HOSTNAME=crave
+          
+          echo '>>> Running AndyCGYan build script...'
+          echo '>>> (repo sync inside crave run is allowed and expected)'
+          bash \$BL/buildbot_treble.sh
+          
+          echo ''
+          echo '============================================'
+          echo 'Build completed!'
+          echo '============================================'
           "
         timeout-minutes: 1440
 
