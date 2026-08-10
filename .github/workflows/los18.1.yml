@@ -118,7 +118,7 @@ jobs:
           fi
 
           if [ "${DCDEVSPACE}" == "1" ]; then
-            crave clone create --projectID 81 $PROJECTFOLDER || echo "Crave clone create failed!"
+            crave clone create --projectID 85 $PROJECTFOLDER || echo "Crave clone create failed!"
           else
             mkdir -p $PROJECTFOLDER
           fi
@@ -196,7 +196,7 @@ jobs:
           
           echo ''
           echo '>>> Initializing LineageOS 18.1 repository...'
-          repo init -u https://github.com/LineageOS/android.git -b lineage-18.1 --depth 1
+          repo init -u https://github.com/accupara/los18.1.git -b lineage-18.1 --git-lfs --depth=1
           
           echo ''
           export BUILD_USERNAME=crave_gsi
