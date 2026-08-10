@@ -187,23 +187,22 @@ jobs:
           echo '>>> Cloning treble_experimentations...'
           git clone https://github.com/AndyCGYan/treble_experimentations ~/treble_experimentations
           
-          echo '>>> Cloning lineage_patches_unified...'
-          git clone https://github.com/AndyCGYan/lineage_patches_unified -b lineage-18.1
-          
-          echo '>>> Cloning lineage_build_unified...'
-          git clone https://github.com/AndyCGYan/lineage_build_unified -b lineage-18.1
-          BL=\$PWD/lineage_build_unified
+          echo '>>> Initializing LineageOS 18.1 repository...'
+          repo init -u https://github.com/LineageOS/android.git -b lineage-18.1 --depth=1
           
           echo ''
-          echo '>>> Initializing LineageOS 18.1 repository...'
-          repo init -u https://github.com/accupara/los18.1.git -b lineage-18.1 --git-lfs --depth=1
+          echo '>>> Cloning lineage_build_unified...'
+          git clone https://github.com/AndyCGYan/lineage_build_unified lineage_build_unified -b lineage-18.1
+          
+          echo '>>> Cloning lineage_patches_unified...'
+          git clone https://github.com/AndyCGYan/lineage_patches_unified lineage_patches_unified -b lineage-18.1
           
           echo ''
           export BUILD_USERNAME=crave_gsi
           export BUILD_HOSTNAME=crave
           
           echo '>>> Running build script...'
-          bash \$BL/buildbot_unified.sh treble ${BUILD_TARGETS}
+          bash lineage_build_unified/buildbot_unified.sh treble ${BUILD_TARGETS}
           
           echo ''
           echo '============================================'
