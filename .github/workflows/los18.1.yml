@@ -81,7 +81,7 @@ jobs:
           echo "::group::Build Configuration"
           echo "Build Variant: ${{ github.event.inputs.BUILD_VARIANT }}"
           echo "Clean Build: ${{ github.event.inputs.CLEAN_BUILD }}"
-          echo "Strategy: Full deps install, skip failed patches, continue build"
+          echo "Strategy: Real libncurses5 from Ubuntu 20.04, skip failed patches"
           echo "::endgroup::"
 
       - name: Telegram Notification - Build Started
@@ -179,61 +179,52 @@ jobs:
           crave run --no-patch $CLEAN_FLAG "
           echo '============================================'
           echo 'LineageOS 18.1 Treble Buildbot'
-          echo 'Strategy: Full deps, skip failed patches, continue build'
+          echo 'Strategy: Real libncurses5 from Ubuntu 20.04, skip failed patches'
           echo 'Building variant(s): ${BUILD_TARGETS}'
           echo '============================================'
           echo ''
 
-          echo '>>> Installing all required build dependencies...'
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            libncurses5 \
-            libncurses-dev \
-            libssl-dev \
-            libreadline-dev \
-            zlib1g-dev \
-            libbz2-dev \
-            liblz4-tool \
-            liblzma-dev \
-            libsqlite3-dev \
-            python3 \
-            pkg-config \
-            ccache \
-            gcc \
-            g++ \
-            flex \
-            bison \
-            gperf \
-            build-essential \
-            curl \
-            g++-multilib \
-            git \
-            gnupg \
-            libc6-dev-i386 \
-            lib32ncurses5-dev \
-            x11proto-core-dev \
-            libx11-dev \
-            lib32z1-dev \
-            libgl1-mesa-dev \
-            libxml2-utils \
-            xsltproc \
-            unzip \
-            fontconfig \
-            2>/dev/null || echo 'Some packages may have failed, continuing...'
-          echo 'Dependency installation complete'
+          echo '>>> Installing real libncurses5 and libtinfo5 (Ubuntu 20.04 binaries)...'
+          sudo apt-get update -qq 2>/dev/null || true
+          sudo apt-get install -y -qq wget 2>/dev/null || true
+
+          wget -q http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.2-0ubuntu2_amd64.deb -O /tmp/libtinfo5.deb
+          wget -q http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.2-0ubuntu2_amd64.deb -O /tmp/libncurses5.deb
+
+          sudo dpkg --force-depends -i /tmp/libtinfo5.deb /tmp/libncurses5.deb 2>/dev/null || {
+            echo 'dpkg failed, extracting manually...'
+            dpkg-deb -x /tmp/libtinfo5.deb /tmp/libtinfo5_extract
+            dpkg-deb -x /tmp/libncurses5.deb /tmp/libncurses5_extract
+            sudo cp /tmp/libtinfo5_extract/usr/lib/x86_64-linux-gnu/libtinfo.so.5* /usr/lib/x86_64-linux-gnu/
+            sudo cp /tmp/libtinfo5_extract/lib/x86_64-linux-gnu/libtinfo.so.5* /usr/lib/x86_64-linux-gnu/ 2>/dev/null || true
+            sudo cp /tmp/libncurses5_extract/usr/lib/x86_64-linux-gnu/libncurses.so.5* /usr/lib/x86_64-linux-gnu/
+            sudo cp /tmp/libncurses5_extract/lib/x86_64-linux-gnu/libncurses.so.5* /usr/lib/x86_64-linux-gnu/ 2>/dev/null || true
+          }
+
+          if [ -f /usr/lib/x86_64-linux-gnu/libncurses.so.5 ]; then
+            echo 'libncurses.so.5 installed successfully'
+          else
+            echo 'ERROR: libncurses.so.5 still missing!'
+          fi
+
+          rm -f /tmp/libtinfo5.deb /tmp/libncurses5.deb
+          echo 'Dependency fix complete'
 
           echo ''
           echo '>>> Cloning treble_experimentations...'
+          rm -rf ~/treble_experimentations 2>/dev/null || true
           git clone https://github.com/AndyCGYan/treble_experimentations ~/treble_experimentations
 
           echo '>>> Initializing LineageOS 18.1 repository...'
           repo init -u https://github.com/LineageOS/android.git -b lineage-18.1 --depth=1
 
           echo ''
-          echo '>>> Cloning lineage_build_unified...'
+          echo '>>> Cloning lineage_build_unified (fresh)...'
+          rm -rf lineage_build_unified 2>/dev/null || true
           git clone https://github.com/AndyCGYan/lineage_build_unified lineage_build_unified -b lineage-18.1
 
-          echo '>>> Cloning lineage_patches_unified...'
+          echo '>>> Cloning lineage_patches_unified (fresh)...'
+          rm -rf lineage_patches_unified 2>/dev/null || true
           git clone https://github.com/AndyCGYan/lineage_patches_unified lineage_patches_unified -b lineage-18.1
 
           echo ''
