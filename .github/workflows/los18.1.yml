@@ -81,6 +81,7 @@ jobs:
           echo "::group::Build Configuration"
           echo "Build Variant: ${{ github.event.inputs.BUILD_VARIANT }}"
           echo "Clean Build: ${{ github.event.inputs.CLEAN_BUILD }}"
+          echo "Source: Frozen manifest (Dec 11, 2023)"
           echo "::endgroup::"
 
       - name: Telegram Notification - Build Started
@@ -169,7 +170,6 @@ jobs:
             CLEAN_FLAG="--clean"
           fi
 
-          # 构建变体列表
           if [ "${{ github.event.inputs.BUILD_VARIANT }}" == "all" ]; then
             BUILD_TARGETS="32B 32BO A64B A64BG A64BO 64B 64BG"
           else
@@ -179,31 +179,34 @@ jobs:
           crave run --no-patch $CLEAN_FLAG "
           echo '============================================'
           echo 'LineageOS 18.1 Treble Buildbot'
-          echo 'Running via crave run - fully compliant'
+          echo 'Source: frozen manifest (Dec 11, 2023)'
           echo 'Building variant(s): ${BUILD_TARGETS}'
           echo '============================================'
           echo ''
-          
+
           echo '>>> Cloning treble_experimentations...'
           git clone https://github.com/AndyCGYan/treble_experimentations ~/treble_experimentations
-          
-          echo '>>> Initializing LineageOS 18.1 repository...'
-          repo init -u https://github.com/LineageOS/android.git -b lineage-18.1 --depth=1
-          
+
+          echo '>>> Downloading frozen manifest (Dec 11, 2023)...'
+          curl -o /tmp/frozen_default.xml https://raw.githubusercontent.com/LineageOS/android/fd0f1538a4e11cf456529c9e9a6cd55508b7592c/default.xml
+
+          echo '>>> Initializing LineageOS 18.1 with frozen manifest...'
+          repo init -u https://github.com/LineageOS/android.git -b lineage-18.1 -m /tmp/frozen_default.xml --depth=1
+
           echo ''
           echo '>>> Cloning lineage_build_unified...'
           git clone https://github.com/AndyCGYan/lineage_build_unified lineage_build_unified -b lineage-18.1
-          
+
           echo '>>> Cloning lineage_patches_unified...'
           git clone https://github.com/AndyCGYan/lineage_patches_unified lineage_patches_unified -b lineage-18.1
-          
+
           echo ''
           export BUILD_USERNAME=crave_gsi
           export BUILD_HOSTNAME=crave
-          
+
           echo '>>> Running build script...'
           bash lineage_build_unified/buildbot_unified.sh treble ${BUILD_TARGETS}
-          
+
           echo ''
           echo '============================================'
           echo 'Build completed!'
