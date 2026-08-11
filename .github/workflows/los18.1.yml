@@ -81,7 +81,7 @@ jobs:
           echo "::group::Build Configuration"
           echo "Build Variant: ${{ github.event.inputs.BUILD_VARIANT }}"
           echo "Clean Build: ${{ github.event.inputs.CLEAN_BUILD }}"
-          echo "Strategy: Skip failed patches, fix libncurses5, continue build"
+          echo "Strategy: Full deps install, skip failed patches, continue build"
           echo "::endgroup::"
 
       - name: Telegram Notification - Build Started
@@ -179,11 +179,50 @@ jobs:
           crave run --no-patch $CLEAN_FLAG "
           echo '============================================'
           echo 'LineageOS 18.1 Treble Buildbot'
-          echo 'Strategy: Skip failed patches, fix libncurses5, continue build'
+          echo 'Strategy: Full deps, skip failed patches, continue build'
           echo 'Building variant(s): ${BUILD_TARGETS}'
           echo '============================================'
           echo ''
 
+          echo '>>> Installing all required build dependencies...'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            libncurses5 \
+            libncurses-dev \
+            libssl-dev \
+            libreadline-dev \
+            zlib1g-dev \
+            libbz2-dev \
+            liblz4-tool \
+            liblzma-dev \
+            libsqlite3-dev \
+            python3 \
+            pkg-config \
+            ccache \
+            gcc \
+            g++ \
+            flex \
+            bison \
+            gperf \
+            build-essential \
+            curl \
+            g++-multilib \
+            git \
+            gnupg \
+            libc6-dev-i386 \
+            lib32ncurses5-dev \
+            x11proto-core-dev \
+            libx11-dev \
+            lib32z1-dev \
+            libgl1-mesa-dev \
+            libxml2-utils \
+            xsltproc \
+            unzip \
+            fontconfig \
+            2>/dev/null || echo 'Some packages may have failed, continuing...'
+          echo 'Dependency installation complete'
+
+          echo ''
           echo '>>> Cloning treble_experimentations...'
           git clone https://github.com/AndyCGYan/treble_experimentations ~/treble_experimentations
 
@@ -204,20 +243,6 @@ jobs:
           echo 'Done - failed patches will be skipped'
 
           echo ''
-          echo '>>> Installing missing libncurses.so.5 for clang...'
-          sudo apt-get update -qq 2>/dev/null || true
-          sudo apt-get install -y -qq libncurses5 2>/dev/null || {
-            echo 'apt install failed, trying symlink fix...'
-            if [ -f /usr/lib/x86_64-linux-gnu/libncurses.so.6 ] && [ ! -f /usr/lib/x86_64-linux-gnu/libncurses.so.5 ]; then
-              sudo ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5
-            fi
-            if [ -f /usr/lib/x86_64-linux-gnu/libtinfo.so.6 ] && [ ! -f /usr/lib/x86_64-linux-gnu/libtinfo.so.5 ]; then
-              sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5
-            fi
-          }
-          echo 'libncurses.so.5 fix applied'
-
-          echo ''
           export BUILD_USERNAME=crave_gsi
           export BUILD_HOSTNAME=crave
 
@@ -232,6 +257,9 @@ jobs:
           if ls ~/build-output/lineage-*.img 2>/dev/null; then
             IMG_COUNT=\$(ls ~/build-output/lineage-*.img 2>/dev/null | wc -l)
             echo \"Found \${IMG_COUNT} GSI image(s)\"
+            for img in ~/build-output/lineage-*.img; do
+              echo \"  \$(basename \$img) - \$(du -h \$img | cut -f1)\"
+            done
             echo ''
             echo '>>> Copying images to out/ for upload scripts...'
             mkdir -p out/
