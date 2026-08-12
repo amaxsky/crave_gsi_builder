@@ -81,7 +81,7 @@ jobs:
           echo "::group::Build Configuration"
           echo "Build Variant: ${{ github.event.inputs.BUILD_VARIANT }}"
           echo "Clean Build: ${{ github.event.inputs.CLEAN_BUILD }}"
-          echo "Strategy: All fixes via temp file injection + skip failed patches"
+          echo "Strategy: Build script via file + skip failed patches"
           echo "::endgroup::"
 
       - name: Telegram Notification - Build Started
@@ -176,11 +176,12 @@ jobs:
             BUILD_TARGETS="${{ github.event.inputs.BUILD_VARIANT }}"
           fi
 
-          crave run --no-patch $CLEAN_FLAG "
+          cat > /tmp/build_script.sh << 'BUILDSCRIPT'
+          #!/bin/bash
           echo '============================================'
           echo 'LineageOS 18.1 Treble Buildbot'
           echo 'Strategy: All fixes via temp file injection + skip failed patches'
-          echo 'Building variant(s): ${BUILD_TARGETS}'
+          echo "Building variant(s): $BUILD_TARGETS"
           echo '============================================'
           echo ''
 
@@ -230,7 +231,7 @@ jobs:
           echo ''
           echo '>>> Making apply_patches.sh fault-tolerant...'
           sed -i 's/^set -e/set +e/' lineage_build_unified/apply_patches.sh
-          sed -i 's/exit 1/echo \"  -> Skipping failed patch, continuing...\"/' lineage_build_unified/apply_patches.sh
+          sed -i 's/exit 1/echo "  -> Skipping failed patch, continuing..."/' lineage_build_unified/apply_patches.sh
           echo 'Done - failed patches will be skipped'
 
           echo ''
@@ -251,18 +252,18 @@ jobs:
           export BUILD_HOSTNAME=crave
 
           echo '>>> Running build script...'
-          bash lineage_build_unified/buildbot_unified.sh treble ${BUILD_TARGETS}
-          BUILD_EXIT_CODE=\$?
+          bash lineage_build_unified/buildbot_unified.sh treble $BUILD_TARGETS
+          BUILD_EXIT_CODE=$?
 
           echo ''
           echo '============================================'
           echo '>>> Checking for generated images...'
           echo '============================================'
           if ls ~/build-output/lineage-*.img 2>/dev/null; then
-            IMG_COUNT=\$(ls ~/build-output/lineage-*.img 2>/dev/null | wc -l)
-            echo Found \${IMG_COUNT} GSI image\(s\)
+            IMG_COUNT=$(ls ~/build-output/lineage-*.img 2>/dev/null | wc -l)
+            echo "Found ${IMG_COUNT} GSI image(s)"
             for img in ~/build-output/lineage-*.img; do
-              echo \$(basename \$img) - \$(du -h \$img | cut -f1)
+              echo "  $(basename $img) - $(du -h $img | cut -f1)"
             done
             echo ''
             echo '>>> Copying images to out/ for upload scripts...'
@@ -278,10 +279,12 @@ jobs:
 
           echo ''
           echo '============================================'
-          echo Build completed with exit code: \$BUILD_EXIT_CODE
+          echo "Build completed with exit code: $BUILD_EXIT_CODE"
           echo '============================================'
-          exit \$BUILD_EXIT_CODE
-          "
+          exit $BUILD_EXIT_CODE
+          BUILDSCRIPT
+
+          crave run --no-patch $CLEAN_FLAG -- bash /tmp/build_script.sh
         timeout-minutes: 1440
 
       - name: Copy artifacts to out/ for upload
