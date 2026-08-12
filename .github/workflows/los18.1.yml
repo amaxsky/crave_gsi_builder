@@ -235,13 +235,13 @@ jobs:
 
           echo ''
           echo '>>> Injecting post-sync fixes into build script...'
-          cat > /tmp/post_sync_fixes.sh << 'INJECT_EOF'
-          echo ">>> Applying post-sync fixes..."
-          sed -i "s/#define BTM_BYPASS_EXTRA_ACL_SETUP BtmBypassExtraAclSetup()/#define BTM_BYPASS_EXTRA_ACL_SETUP FALSE/" device/phh/treble/bluetooth/bdroid_buildcfg.h
-          echo "BTM bypass fix re-applied"
-          curl -s -o frameworks/native/services/inputflinger/reader/mapper/TouchInputMapper.cpp https://github.com/amaxsky/los18.1gsi/raw/refs/heads/main/TouchInputMapper.cpp
-          echo "TouchInputMapper.cpp replaced"
-          INJECT_EOF
+          printf '%s\n' \
+            'echo ">>> Applying post-sync fixes..."' \
+            'sed -i "s/#define BTM_BYPASS_EXTRA_ACL_SETUP BtmBypassExtraAclSetup()/#define BTM_BYPASS_EXTRA_ACL_SETUP FALSE/" device/phh/treble/bluetooth/bdroid_buildcfg.h' \
+            'echo "BTM bypass fix re-applied"' \
+            'curl -s -o frameworks/native/services/inputflinger/reader/mapper/TouchInputMapper.cpp https://github.com/amaxsky/los18.1gsi/raw/refs/heads/main/TouchInputMapper.cpp' \
+            'echo "TouchInputMapper.cpp replaced"' \
+            > /tmp/post_sync_fixes.sh
           sed -i '/^repo sync/r /tmp/post_sync_fixes.sh' lineage_build_unified/buildbot_unified.sh
           rm -f /tmp/post_sync_fixes.sh
           echo 'Post-sync fixes injected into build script'
