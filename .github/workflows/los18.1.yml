@@ -81,7 +81,7 @@ jobs:
           echo "::group::Build Configuration"
           echo "Build Variant: ${{ github.event.inputs.BUILD_VARIANT }}"
           echo "Clean Build: ${{ github.event.inputs.CLEAN_BUILD }}"
-          echo "Strategy: All fixes injected + skip failed patches + separate image check"
+          echo "Strategy: Build script in temp file + skip failed patches"
           echo "::endgroup::"
 
       - name: Telegram Notification - Build Started
@@ -159,28 +159,16 @@ jobs:
           CRAVE_USERNAME: ${{ secrets.CRAVE_USERNAME }}
           CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}
 
-      - name: Build LineageOS 18.1 GSI
+      - name: Create build script
         run: |
-          cd $PROJECTFOLDER
-          
-          jq '.projects = []' ~/crave.conf > tmp && mv tmp ~/crave.conf
-          
-          CLEAN_FLAG=""
-          if [ "${{ github.event.inputs.CLEAN_BUILD }}" == "yes" ]; then
-            CLEAN_FLAG="--clean"
-          fi
+          cat > /tmp/crave_build.sh << 'BUILD_EOF'
+          #!/bin/bash
+          set -e
 
-          if [ "${{ github.event.inputs.BUILD_VARIANT }}" == "all" ]; then
-            BUILD_TARGETS="32B 32BO A64B A64BG A64BO 64B 64BG"
-          else
-            BUILD_TARGETS="${{ github.event.inputs.BUILD_VARIANT }}"
-          fi
-
-          crave run --no-patch $CLEAN_FLAG "
           echo '============================================'
           echo 'LineageOS 18.1 Treble Buildbot'
           echo 'Strategy: All fixes injected + skip failed patches'
-          echo 'Building variant(s): ${BUILD_TARGETS}'
+          echo 'Building variant(s): '${BUILD_TARGETS}
           echo '============================================'
           echo ''
 
@@ -230,7 +218,7 @@ jobs:
           echo ''
           echo '>>> Making apply_patches.sh fault-tolerant...'
           sed -i 's/^set -e/set +e/' lineage_build_unified/apply_patches.sh
-          sed -i 's/exit 1/echo \"  -> Skipping failed patch, continuing...\"/' lineage_build_unified/apply_patches.sh
+          sed -i 's/exit 1/echo "  -> Skipping failed patch, continuing..."/' lineage_build_unified/apply_patches.sh
           echo 'Done - failed patches will be skipped'
 
           echo ''
@@ -252,7 +240,28 @@ jobs:
 
           echo '>>> Running build script...'
           bash lineage_build_unified/buildbot_unified.sh treble ${BUILD_TARGETS}
-          "
+          BUILD_EOF
+          chmod +x /tmp/crave_build.sh
+
+      - name: Build LineageOS 18.1 GSI
+        run: |
+          cd $PROJECTFOLDER
+          
+          jq '.projects = []' ~/crave.conf > tmp && mv tmp ~/crave.conf
+          
+          CLEAN_FLAG=""
+          if [ "${{ github.event.inputs.CLEAN_BUILD }}" == "yes" ]; then
+            CLEAN_FLAG="--clean"
+          fi
+
+          if [ "${{ github.event.inputs.BUILD_VARIANT }}" == "all" ]; then
+            BUILD_TARGETS="32B 32BO A64B A64BG A64BO 64B 64BG"
+          else
+            BUILD_TARGETS="${{ github.event.inputs.BUILD_VARIANT }}"
+          fi
+
+          export BUILD_TARGETS
+          crave run --no-patch $CLEAN_FLAG 'bash /tmp/crave_build.sh'
         timeout-minutes: 1440
 
       - name: Check and copy images
