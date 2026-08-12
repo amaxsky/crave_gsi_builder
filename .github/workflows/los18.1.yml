@@ -81,7 +81,7 @@ jobs:
           echo "::group::Build Configuration"
           echo "Build Variant: ${{ github.event.inputs.BUILD_VARIANT }}"
           echo "Clean Build: ${{ github.event.inputs.CLEAN_BUILD }}"
-          echo "Strategy: Real libncurses5 + post-sync fixes injected + skip failed patches"
+          echo "Strategy: Real libncurses5 + sed r injection + skip failed patches"
           echo "::endgroup::"
 
       - name: Telegram Notification - Build Started
@@ -179,7 +179,7 @@ jobs:
           crave run --no-patch $CLEAN_FLAG "
           echo '============================================'
           echo 'LineageOS 18.1 Treble Buildbot'
-          echo 'Strategy: Real libncurses5 + post-sync fixes + skip failed patches'
+          echo 'Strategy: Real libncurses5 + sed r injection + skip failed patches'
           echo 'Building variant(s): ${BUILD_TARGETS}'
           echo '============================================'
           echo ''
@@ -235,12 +235,15 @@ jobs:
 
           echo ''
           echo '>>> Injecting post-sync fixes into build script...'
-          sed -i '/^repo sync/a\
-          echo ">>> Applying post-sync fixes..."\
-          sed -i "s/#define BTM_BYPASS_EXTRA_ACL_SETUP BtmBypassExtraAclSetup()/#define BTM_BYPASS_EXTRA_ACL_SETUP FALSE/" device/phh/treble/bluetooth/bdroid_buildcfg.h\
-          echo "BTM bypass fix re-applied"\
-          curl -s -o frameworks/native/services/inputflinger/reader/mapper/TouchInputMapper.cpp https://github.com/amaxsky/los18.1gsi/raw/refs/heads/main/TouchInputMapper.cpp\
-          echo "TouchInputMapper.cpp replaced"' lineage_build_unified/buildbot_unified.sh
+          cat > /tmp/post_sync_fixes.sh << 'INJECTEOF'
+          echo ">>> Applying post-sync fixes..."
+          sed -i "s/#define BTM_BYPASS_EXTRA_ACL_SETUP BtmBypassExtraAclSetup()/#define BTM_BYPASS_EXTRA_ACL_SETUP FALSE/" device/phh/treble/bluetooth/bdroid_buildcfg.h
+          echo "BTM bypass fix re-applied"
+          curl -s -o frameworks/native/services/inputflinger/reader/mapper/TouchInputMapper.cpp https://github.com/amaxsky/los18.1gsi/raw/refs/heads/main/TouchInputMapper.cpp
+          echo "TouchInputMapper.cpp replaced"
+          INJECTEOF
+          sed -i '/^repo sync/r /tmp/post_sync_fixes.sh' lineage_build_unified/buildbot_unified.sh
+          rm -f /tmp/post_sync_fixes.sh
           echo 'Post-sync fixes injected into build script'
 
           echo ''
