@@ -81,7 +81,7 @@ jobs:
           echo "::group::Build Configuration"
           echo "Build Variant: ${{ github.event.inputs.BUILD_VARIANT }}"
           echo "Clean Build: ${{ github.event.inputs.CLEAN_BUILD }}"
-          echo "Strategy: Build script via file + skip failed patches"
+          echo "Strategy: crave run with heredoc + skip failed patches"
           echo "::endgroup::"
 
       - name: Telegram Notification - Build Started
@@ -176,12 +176,10 @@ jobs:
             BUILD_TARGETS="${{ github.event.inputs.BUILD_VARIANT }}"
           fi
 
-          cat > /tmp/build_script.sh << 'BUILDSCRIPT'
-          #!/bin/bash
+          crave run --no-patch $CLEAN_FLAG -- bash -s << 'CRAVEEOF'
           echo '============================================'
           echo 'LineageOS 18.1 Treble Buildbot'
-          echo 'Strategy: All fixes via temp file injection + skip failed patches'
-          echo "Building variant(s): $BUILD_TARGETS"
+          echo 'Strategy: crave run with heredoc + skip failed patches'
           echo '============================================'
           echo ''
 
@@ -232,10 +230,10 @@ jobs:
           echo '>>> Making apply_patches.sh fault-tolerant...'
           sed -i 's/^set -e/set +e/' lineage_build_unified/apply_patches.sh
           sed -i 's/exit 1/echo "  -> Skipping failed patch, continuing..."/' lineage_build_unified/apply_patches.sh
-          echo 'Done - failed patches will be skipped'
+          echo 'Done'
 
           echo ''
-          echo '>>> Injecting post-sync fixes into build script...'
+          echo '>>> Injecting post-sync fixes...'
           printf '%s\n' \
             'echo ">>> Applying post-sync fixes..."' \
             'sed -i "s/#define BTM_BYPASS_EXTRA_ACL_SETUP BtmBypassExtraAclSetup()/#define BTM_BYPASS_EXTRA_ACL_SETUP FALSE/" device/phh/treble/bluetooth/bdroid_buildcfg.h' \
@@ -245,14 +243,14 @@ jobs:
             > /tmp/post_sync_fixes.sh
           sed -i '/^repo sync/r /tmp/post_sync_fixes.sh' lineage_build_unified/buildbot_unified.sh
           rm -f /tmp/post_sync_fixes.sh
-          echo 'Post-sync fixes injected into build script'
+          echo 'Post-sync fixes injected'
 
           echo ''
           export BUILD_USERNAME=crave_gsi
           export BUILD_HOSTNAME=crave
 
           echo '>>> Running build script...'
-          bash lineage_build_unified/buildbot_unified.sh treble $BUILD_TARGETS
+          bash lineage_build_unified/buildbot_unified.sh treble 64B
           BUILD_EXIT_CODE=$?
 
           echo ''
@@ -282,9 +280,7 @@ jobs:
           echo "Build completed with exit code: $BUILD_EXIT_CODE"
           echo '============================================'
           exit $BUILD_EXIT_CODE
-          BUILDSCRIPT
-
-          crave run --no-patch $CLEAN_FLAG -- bash /tmp/build_script.sh
+          CRAVEEOF
         timeout-minutes: 1440
 
       - name: Copy artifacts to out/ for upload
