@@ -81,7 +81,7 @@ jobs:
           echo "::group::Build Configuration"
           echo "Build Variant: ${{ github.event.inputs.BUILD_VARIANT }}"
           echo "Clean Build: ${{ github.event.inputs.CLEAN_BUILD }}"
-          echo "Strategy: All fixes via temp file injection + skip failed patches"
+          echo "Strategy: All fixes injected + skip failed patches + separate image check"
           echo "::endgroup::"
 
       - name: Telegram Notification - Build Started
@@ -179,7 +179,7 @@ jobs:
           crave run --no-patch $CLEAN_FLAG "
           echo '============================================'
           echo 'LineageOS 18.1 Treble Buildbot'
-          echo 'Strategy: All fixes via temp file injection + skip failed patches'
+          echo 'Strategy: All fixes injected + skip failed patches'
           echo 'Building variant(s): ${BUILD_TARGETS}'
           echo '============================================'
           echo ''
@@ -252,9 +252,13 @@ jobs:
 
           echo '>>> Running build script...'
           bash lineage_build_unified/buildbot_unified.sh treble ${BUILD_TARGETS}
-          BUILD_EXIT_CODE=\$?
+          "
+        timeout-minutes: 1440
 
-          echo ''
+      - name: Check and copy images
+        run: |
+          cd $PROJECTFOLDER
+          crave ssh -- "
           echo '============================================'
           echo '>>> Checking for generated images...'
           echo '============================================'
@@ -266,38 +270,16 @@ jobs:
             done
             echo ''
             echo '>>> Copying images to out/ for upload scripts...'
-            mkdir -p out/
-            cp ~/build-output/lineage-*.img out/ 2>/dev/null || true
-            cp ~/build-output/lineage-*.zip out/ 2>/dev/null || true
+            mkdir -p /tmp/src/android/out/
+            cp ~/build-output/lineage-*.img /tmp/src/android/out/ 2>/dev/null || true
+            cp ~/build-output/lineage-*.zip /tmp/src/android/out/ 2>/dev/null || true
             echo 'Images copied successfully'
           else
             echo 'WARNING: No GSI images found in ~/build-output/'
             echo 'Contents of ~/build-output/:'
             ls -la ~/build-output/ 2>/dev/null || echo '(directory empty or missing)'
           fi
-
-          echo ''
           echo '============================================'
-          echo 'Build completed with exit code: '\$BUILD_EXIT_CODE
-          echo '============================================'
-          exit \$BUILD_EXIT_CODE
-          "
-        timeout-minutes: 1440
-
-      - name: Copy artifacts to out/ for upload
-        continue-on-error: true
-        run: |
-          cd $PROJECTFOLDER
-          crave ssh -- "
-          if ls ~/build-output/lineage-*.img 2>/dev/null; then
-            mkdir -p /tmp/src/android/out/
-            cp ~/build-output/lineage-*.img /tmp/src/android/out/ 2>/dev/null || true
-            cp ~/build-output/lineage-*.zip /tmp/src/android/out/ 2>/dev/null || true
-            echo 'Artifacts copied to out/'
-            ls -la /tmp/src/android/out/lineage-*
-          else
-            echo 'No artifacts found in ~/build-output/'
-          fi
           "
 
       - name: Telegram Notification - Build Status
