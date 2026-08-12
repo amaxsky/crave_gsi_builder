@@ -81,7 +81,7 @@ jobs:
           echo "::group::Build Configuration"
           echo "Build Variant: ${{ github.event.inputs.BUILD_VARIANT }}"
           echo "Clean Build: ${{ github.event.inputs.CLEAN_BUILD }}"
-          echo "Strategy: Real libncurses5 + sed r injection + skip failed patches"
+          echo "Strategy: Custom buildbot_unified.sh + skip failed patches"
           echo "::endgroup::"
 
       - name: Telegram Notification - Build Started
@@ -179,7 +179,7 @@ jobs:
           crave run --no-patch $CLEAN_FLAG "
           echo '============================================'
           echo 'LineageOS 18.1 Treble Buildbot'
-          echo 'Strategy: Real libncurses5 + sed r injection + skip failed patches'
+          echo 'Strategy: Custom buildbot_unified.sh + skip failed patches'
           echo 'Building variant(s): ${BUILD_TARGETS}'
           echo '============================================'
           echo ''
@@ -219,9 +219,14 @@ jobs:
           repo init -u https://github.com/LineageOS/android.git -b lineage-18.1 --depth=1
 
           echo ''
-          echo '>>> Cloning lineage_build_unified (fresh)...'
+          echo '>>> Cloning lineage_build_unified...'
           rm -rf lineage_build_unified 2>/dev/null || true
           git clone https://github.com/AndyCGYan/lineage_build_unified lineage_build_unified -b lineage-18.1
+
+          echo '>>> Replacing buildbot_unified.sh with custom version...'
+          curl -s -o lineage_build_unified/buildbot_unified.sh https://github.com/amaxsky/los18.1gsi/raw/refs/heads/main/buildbot_unified.sh
+          chmod +x lineage_build_unified/buildbot_unified.sh
+          echo 'Custom buildbot_unified.sh installed'
 
           echo '>>> Cloning lineage_patches_unified (fresh)...'
           rm -rf lineage_patches_unified 2>/dev/null || true
@@ -232,19 +237,6 @@ jobs:
           sed -i 's/^set -e/set +e/' lineage_build_unified/apply_patches.sh
           sed -i 's/exit 1/echo \"  -> Skipping failed patch, continuing...\"/' lineage_build_unified/apply_patches.sh
           echo 'Done - failed patches will be skipped'
-
-          echo ''
-          echo '>>> Injecting post-sync fixes into build script...'
-          cat > /tmp/post_sync_fixes.sh << 'INJECTEOF'
-          echo ">>> Applying post-sync fixes..."
-          sed -i "s/#define BTM_BYPASS_EXTRA_ACL_SETUP BtmBypassExtraAclSetup()/#define BTM_BYPASS_EXTRA_ACL_SETUP FALSE/" device/phh/treble/bluetooth/bdroid_buildcfg.h
-          echo "BTM bypass fix re-applied"
-          curl -s -o frameworks/native/services/inputflinger/reader/mapper/TouchInputMapper.cpp https://github.com/amaxsky/los18.1gsi/raw/refs/heads/main/TouchInputMapper.cpp
-          echo "TouchInputMapper.cpp replaced"
-          INJECTEOF
-          sed -i '/^repo sync/r /tmp/post_sync_fixes.sh' lineage_build_unified/buildbot_unified.sh
-          rm -f /tmp/post_sync_fixes.sh
-          echo 'Post-sync fixes injected into build script'
 
           echo ''
           export BUILD_USERNAME=crave_gsi
