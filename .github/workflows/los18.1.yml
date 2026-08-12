@@ -81,7 +81,7 @@ jobs:
           echo "::group::Build Configuration"
           echo "Build Variant: ${{ github.event.inputs.BUILD_VARIANT }}"
           echo "Clean Build: ${{ github.event.inputs.CLEAN_BUILD }}"
-          echo "Strategy: Build script in temp file + skip failed patches"
+          echo "Strategy: All fixes via temp file injection + skip failed patches"
           echo "::endgroup::"
 
       - name: Telegram Notification - Build Started
@@ -159,16 +159,28 @@ jobs:
           CRAVE_USERNAME: ${{ secrets.CRAVE_USERNAME }}
           CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}
 
-      - name: Create build script
+      - name: Build LineageOS 18.1 GSI
         run: |
-          cat > /tmp/crave_build.sh << 'BUILD_EOF'
-          #!/bin/bash
-          set -e
+          cd $PROJECTFOLDER
+          
+          jq '.projects = []' ~/crave.conf > tmp && mv tmp ~/crave.conf
+          
+          CLEAN_FLAG=""
+          if [ "${{ github.event.inputs.CLEAN_BUILD }}" == "yes" ]; then
+            CLEAN_FLAG="--clean"
+          fi
 
+          if [ "${{ github.event.inputs.BUILD_VARIANT }}" == "all" ]; then
+            BUILD_TARGETS="32B 32BO A64B A64BG A64BO 64B 64BG"
+          else
+            BUILD_TARGETS="${{ github.event.inputs.BUILD_VARIANT }}"
+          fi
+
+          crave run --no-patch $CLEAN_FLAG "
           echo '============================================'
           echo 'LineageOS 18.1 Treble Buildbot'
-          echo 'Strategy: All fixes injected + skip failed patches'
-          echo 'Building variant(s): '${BUILD_TARGETS}
+          echo 'Strategy: All fixes via temp file injection + skip failed patches'
+          echo 'Building variant(s): ${BUILD_TARGETS}'
           echo '============================================'
           echo ''
 
@@ -218,7 +230,7 @@ jobs:
           echo ''
           echo '>>> Making apply_patches.sh fault-tolerant...'
           sed -i 's/^set -e/set +e/' lineage_build_unified/apply_patches.sh
-          sed -i 's/exit 1/echo "  -> Skipping failed patch, continuing..."/' lineage_build_unified/apply_patches.sh
+          sed -i 's/exit 1/echo \"  -> Skipping failed patch, continuing...\"/' lineage_build_unified/apply_patches.sh
           echo 'Done - failed patches will be skipped'
 
           echo ''
@@ -240,55 +252,52 @@ jobs:
 
           echo '>>> Running build script...'
           bash lineage_build_unified/buildbot_unified.sh treble ${BUILD_TARGETS}
-          BUILD_EOF
-          chmod +x /tmp/crave_build.sh
+          BUILD_EXIT_CODE=\$?
 
-      - name: Build LineageOS 18.1 GSI
-        run: |
-          cd $PROJECTFOLDER
-          
-          jq '.projects = []' ~/crave.conf > tmp && mv tmp ~/crave.conf
-          
-          CLEAN_FLAG=""
-          if [ "${{ github.event.inputs.CLEAN_BUILD }}" == "yes" ]; then
-            CLEAN_FLAG="--clean"
-          fi
-
-          if [ "${{ github.event.inputs.BUILD_VARIANT }}" == "all" ]; then
-            BUILD_TARGETS="32B 32BO A64B A64BG A64BO 64B 64BG"
-          else
-            BUILD_TARGETS="${{ github.event.inputs.BUILD_VARIANT }}"
-          fi
-
-          export BUILD_TARGETS
-          crave run --no-patch $CLEAN_FLAG 'bash /tmp/crave_build.sh'
-        timeout-minutes: 1440
-
-      - name: Check and copy images
-        run: |
-          cd $PROJECTFOLDER
-          crave ssh -- "
+          echo ''
           echo '============================================'
           echo '>>> Checking for generated images...'
           echo '============================================'
           if ls ~/build-output/lineage-*.img 2>/dev/null; then
             IMG_COUNT=\$(ls ~/build-output/lineage-*.img 2>/dev/null | wc -l)
-            echo \"Found \${IMG_COUNT} GSI image(s)\"
+            echo Found \${IMG_COUNT} GSI image\(s\)
             for img in ~/build-output/lineage-*.img; do
-              echo \"  \$(basename \$img) - \$(du -h \$img | cut -f1)\"
+              echo \$(basename \$img) - \$(du -h \$img | cut -f1)
             done
             echo ''
             echo '>>> Copying images to out/ for upload scripts...'
-            mkdir -p /tmp/src/android/out/
-            cp ~/build-output/lineage-*.img /tmp/src/android/out/ 2>/dev/null || true
-            cp ~/build-output/lineage-*.zip /tmp/src/android/out/ 2>/dev/null || true
+            mkdir -p out/
+            cp ~/build-output/lineage-*.img out/ 2>/dev/null || true
+            cp ~/build-output/lineage-*.zip out/ 2>/dev/null || true
             echo 'Images copied successfully'
           else
             echo 'WARNING: No GSI images found in ~/build-output/'
             echo 'Contents of ~/build-output/:'
             ls -la ~/build-output/ 2>/dev/null || echo '(directory empty or missing)'
           fi
+
+          echo ''
           echo '============================================'
+          echo Build completed with exit code: \$BUILD_EXIT_CODE
+          echo '============================================'
+          exit \$BUILD_EXIT_CODE
+          "
+        timeout-minutes: 1440
+
+      - name: Copy artifacts to out/ for upload
+        continue-on-error: true
+        run: |
+          cd $PROJECTFOLDER
+          crave ssh -- "
+          if ls ~/build-output/lineage-*.img 2>/dev/null; then
+            mkdir -p /tmp/src/android/out/
+            cp ~/build-output/lineage-*.img /tmp/src/android/out/ 2>/dev/null || true
+            cp ~/build-output/lineage-*.zip /tmp/src/android/out/ 2>/dev/null || true
+            echo 'Artifacts copied to out/'
+            ls -la /tmp/src/android/out/lineage-*
+          else
+            echo 'No artifacts found in ~/build-output/'
+          fi
           "
 
       - name: Telegram Notification - Build Status
