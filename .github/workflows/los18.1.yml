@@ -81,7 +81,7 @@ jobs:
           echo "::group::Build Configuration"
           echo "Build Variant: ${{ github.event.inputs.BUILD_VARIANT }}"
           echo "Clean Build: ${{ github.event.inputs.CLEAN_BUILD }}"
-          echo "Strategy: crave run with heredoc + skip failed patches"
+          echo "Strategy: Real libncurses5 + post-sync fixes injected + skip failed patches"
           echo "::endgroup::"
 
       - name: Telegram Notification - Build Started
@@ -176,10 +176,11 @@ jobs:
             BUILD_TARGETS="${{ github.event.inputs.BUILD_VARIANT }}"
           fi
 
-          crave run --no-patch $CLEAN_FLAG -- bash -s << 'CRAVEEOF'
+          crave run --no-patch $CLEAN_FLAG "
           echo '============================================'
           echo 'LineageOS 18.1 Treble Buildbot'
-          echo 'Strategy: crave run with heredoc + skip failed patches'
+          echo 'Strategy: Real libncurses5 + post-sync fixes + skip failed patches'
+          echo 'Building variant(s): ${BUILD_TARGETS}'
           echo '============================================'
           echo ''
 
@@ -229,39 +230,36 @@ jobs:
           echo ''
           echo '>>> Making apply_patches.sh fault-tolerant...'
           sed -i 's/^set -e/set +e/' lineage_build_unified/apply_patches.sh
-          sed -i 's/exit 1/echo "  -> Skipping failed patch, continuing..."/' lineage_build_unified/apply_patches.sh
-          echo 'Done'
+          sed -i 's/exit 1/echo \"  -> Skipping failed patch, continuing...\"/' lineage_build_unified/apply_patches.sh
+          echo 'Done - failed patches will be skipped'
 
           echo ''
-          echo '>>> Injecting post-sync fixes...'
-          printf '%s\n' \
-            'echo ">>> Applying post-sync fixes..."' \
-            'sed -i "s/#define BTM_BYPASS_EXTRA_ACL_SETUP BtmBypassExtraAclSetup()/#define BTM_BYPASS_EXTRA_ACL_SETUP FALSE/" device/phh/treble/bluetooth/bdroid_buildcfg.h' \
-            'echo "BTM bypass fix re-applied"' \
-            'curl -s -o frameworks/native/services/inputflinger/reader/mapper/TouchInputMapper.cpp https://github.com/amaxsky/los18.1gsi/raw/refs/heads/main/TouchInputMapper.cpp' \
-            'echo "TouchInputMapper.cpp replaced"' \
-            > /tmp/post_sync_fixes.sh
-          sed -i '/^repo sync/r /tmp/post_sync_fixes.sh' lineage_build_unified/buildbot_unified.sh
-          rm -f /tmp/post_sync_fixes.sh
-          echo 'Post-sync fixes injected'
+          echo '>>> Injecting post-sync fixes into build script...'
+          sed -i '/^repo sync/a\
+          echo ">>> Applying post-sync fixes..."\
+          sed -i "s/#define BTM_BYPASS_EXTRA_ACL_SETUP BtmBypassExtraAclSetup()/#define BTM_BYPASS_EXTRA_ACL_SETUP FALSE/" device/phh/treble/bluetooth/bdroid_buildcfg.h\
+          echo "BTM bypass fix re-applied"\
+          curl -s -o frameworks/native/services/inputflinger/reader/mapper/TouchInputMapper.cpp https://github.com/amaxsky/los18.1gsi/raw/refs/heads/main/TouchInputMapper.cpp\
+          echo "TouchInputMapper.cpp replaced"' lineage_build_unified/buildbot_unified.sh
+          echo 'Post-sync fixes injected into build script'
 
           echo ''
           export BUILD_USERNAME=crave_gsi
           export BUILD_HOSTNAME=crave
 
           echo '>>> Running build script...'
-          bash lineage_build_unified/buildbot_unified.sh treble 64B
-          BUILD_EXIT_CODE=$?
+          bash lineage_build_unified/buildbot_unified.sh treble ${BUILD_TARGETS}
+          BUILD_EXIT_CODE=\$?
 
           echo ''
           echo '============================================'
           echo '>>> Checking for generated images...'
           echo '============================================'
           if ls ~/build-output/lineage-*.img 2>/dev/null; then
-            IMG_COUNT=$(ls ~/build-output/lineage-*.img 2>/dev/null | wc -l)
-            echo "Found ${IMG_COUNT} GSI image(s)"
+            IMG_COUNT=\$(ls ~/build-output/lineage-*.img 2>/dev/null | wc -l)
+            echo \"Found \${IMG_COUNT} GSI image(s)\"
             for img in ~/build-output/lineage-*.img; do
-              echo "  $(basename $img) - $(du -h $img | cut -f1)"
+              echo \"  \$(basename \$img) - \$(du -h \$img | cut -f1)\"
             done
             echo ''
             echo '>>> Copying images to out/ for upload scripts...'
@@ -277,10 +275,10 @@ jobs:
 
           echo ''
           echo '============================================'
-          echo "Build completed with exit code: $BUILD_EXIT_CODE"
+          echo 'Build completed with exit code: '\$BUILD_EXIT_CODE
           echo '============================================'
-          exit $BUILD_EXIT_CODE
-          CRAVEEOF
+          exit \$BUILD_EXIT_CODE
+          "
         timeout-minutes: 1440
 
       - name: Copy artifacts to out/ for upload
