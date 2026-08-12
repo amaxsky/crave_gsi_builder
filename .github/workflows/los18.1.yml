@@ -81,7 +81,7 @@ jobs:
           echo "::group::Build Configuration"
           echo "Build Variant: ${{ github.event.inputs.BUILD_VARIANT }}"
           echo "Clean Build: ${{ github.event.inputs.CLEAN_BUILD }}"
-          echo "Strategy: Real libncurses5 from Ubuntu 20.04, skip failed patches"
+          echo "Strategy: All fixes via temp file injection + skip failed patches"
           echo "::endgroup::"
 
       - name: Telegram Notification - Build Started
@@ -179,7 +179,7 @@ jobs:
           crave run --no-patch $CLEAN_FLAG "
           echo '============================================'
           echo 'LineageOS 18.1 Treble Buildbot'
-          echo 'Strategy: Real libncurses5 from Ubuntu 20.04, skip failed patches'
+          echo 'Strategy: All fixes via temp file injection + skip failed patches'
           echo 'Building variant(s): ${BUILD_TARGETS}'
           echo '============================================'
           echo ''
@@ -232,6 +232,19 @@ jobs:
           sed -i 's/^set -e/set +e/' lineage_build_unified/apply_patches.sh
           sed -i 's/exit 1/echo \"  -> Skipping failed patch, continuing...\"/' lineage_build_unified/apply_patches.sh
           echo 'Done - failed patches will be skipped'
+
+          echo ''
+          echo '>>> Injecting post-sync fixes into build script...'
+          cat > /tmp/post_sync_fixes.sh << 'INJECT_EOF'
+          echo ">>> Applying post-sync fixes..."
+          sed -i "s/#define BTM_BYPASS_EXTRA_ACL_SETUP BtmBypassExtraAclSetup()/#define BTM_BYPASS_EXTRA_ACL_SETUP FALSE/" device/phh/treble/bluetooth/bdroid_buildcfg.h
+          echo "BTM bypass fix re-applied"
+          curl -s -o frameworks/native/services/inputflinger/reader/mapper/TouchInputMapper.cpp https://github.com/amaxsky/los18.1gsi/raw/refs/heads/main/TouchInputMapper.cpp
+          echo "TouchInputMapper.cpp replaced"
+          INJECT_EOF
+          sed -i '/^repo sync/r /tmp/post_sync_fixes.sh' lineage_build_unified/buildbot_unified.sh
+          rm -f /tmp/post_sync_fixes.sh
+          echo 'Post-sync fixes injected into build script'
 
           echo ''
           export BUILD_USERNAME=crave_gsi
