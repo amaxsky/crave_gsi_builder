@@ -81,7 +81,7 @@ jobs:
           echo "::group::Build Configuration"
           echo "Build Variant: ${{ github.event.inputs.BUILD_VARIANT }}"
           echo "Clean Build: ${{ github.event.inputs.CLEAN_BUILD }}"
-          echo "Strategy: Custom buildbot_unified.sh + skip failed patches + verify"
+          echo "Strategy: Git clone custom files + skip failed patches"
           echo "::endgroup::"
 
       - name: Telegram Notification - Build Started
@@ -179,7 +179,7 @@ jobs:
           crave run --no-patch $CLEAN_FLAG "
           echo '============================================'
           echo 'LineageOS 18.1 Treble Buildbot'
-          echo 'Strategy: Custom buildbot_unified.sh + skip failed patches + verify'
+          echo 'Strategy: Git clone custom files + skip failed patches'
           echo 'Building variant(s): ${BUILD_TARGETS}'
           echo '============================================'
           echo ''
@@ -223,17 +223,27 @@ jobs:
           rm -rf lineage_build_unified 2>/dev/null || true
           git clone https://github.com/AndyCGYan/lineage_build_unified lineage_build_unified -b lineage-18.1
 
-          echo '>>> Replacing buildbot_unified.sh with custom version...'
-          curl -s -o lineage_build_unified/buildbot_unified.sh https://github.com/amaxsky/los18.1gsi/raw/refs/heads/main/buildbot_unified.sh
-          chmod +x lineage_build_unified/buildbot_unified.sh
-          echo 'Custom buildbot_unified.sh installed'
+          echo '>>> Cloning custom files from amaxsky/los18.1gsi...'
+          rm -rf /tmp/los18gsi 2>/dev/null || true
+          git clone --depth=1 https://github.com/amaxsky/los18.1gsi.git /tmp/los18gsi
 
-          echo '>>> Verifying script...'
+          echo '>>> Copying buildbot_unified.sh...'
+          cp /tmp/los18gsi/buildbot_unified.sh lineage_build_unified/buildbot_unified.sh
+          chmod +x lineage_build_unified/buildbot_unified.sh
+          echo 'buildbot_unified.sh copied'
+
+          echo '>>> Copying TouchInputMapper.cpp...'
+          mkdir -p frameworks/native/services/inputflinger/reader/mapper/
+          cp /tmp/los18gsi/TouchInputMapper.cpp frameworks/native/services/inputflinger/reader/mapper/TouchInputMapper.cpp
+          echo 'TouchInputMapper.cpp copied'
+
+          rm -rf /tmp/los18gsi
+
+          echo '>>> Verifying files...'
           ls -la lineage_build_unified/buildbot_unified.sh
-          echo '--- First 10 lines:'
-          head -10 lineage_build_unified/buildbot_unified.sh
-          echo '--- Line count:'
           wc -l lineage_build_unified/buildbot_unified.sh
+          head -3 lineage_build_unified/buildbot_unified.sh
+          ls -la frameworks/native/services/inputflinger/reader/mapper/TouchInputMapper.cpp
 
           echo '>>> Cloning lineage_patches_unified (fresh)...'
           rm -rf lineage_patches_unified 2>/dev/null || true
