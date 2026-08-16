@@ -18,23 +18,26 @@ jobs:
           sudo ln -sf /home/${USER}/bin/crave /usr/bin/crave
           envsubst < ${PWD}/crave.conf.sample >> ${PWD}/crave.conf
           rm -rf ${PWD}/crave.conf.sample
-          ls -la crave.conf
         env:
           CRAVE_USERNAME: ${{ secrets.CRAVE_USERNAME }}
           CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}
 
-      - name: Pull image from crave
+      - name: Find devspace project
         run: |
-          crave pull ~/build-output/lineage-18.1-*.img ./
+          crave clone list --json | jq '.clones[] | {name: ."Project Name", id: ."Project Id", path: ."Cloned At"}'
+
+      - name: Pull image via crave ssh
+        run: |
+          crave ssh -- "cat ~/build-output/lineage-18.1-*.img" > lineage-18.1.img
 
       - name: Display pulled file
         run: |
-          ls -la lineage-*.img
+          ls -la lineage-18.1.img
 
       - name: Upload to GitHub Releases
         uses: softprops/action-gh-release@v1
         with:
-          files: lineage-*.img
+          files: lineage-18.1.img
           tag_name: gsi-${{ github.run_id }}
           name: "LineageOS 18.1 GSI - ${{ github.run_id }}"
         env:
