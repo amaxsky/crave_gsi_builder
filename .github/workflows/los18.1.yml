@@ -81,7 +81,7 @@ jobs:
           echo "::group::Build Configuration"
           echo "Build Variant: ${{ github.event.inputs.BUILD_VARIANT }}"
           echo "Clean Build: ${{ github.event.inputs.CLEAN_BUILD }}"
-          echo "Strategy: Git clone custom files + skip failed patches"
+          echo "Strategy: Git clone custom files + skip failed patches + heartbeat"
           echo "::endgroup::"
 
       - name: Telegram Notification - Build Started
@@ -159,7 +159,7 @@ jobs:
           CRAVE_USERNAME: ${{ secrets.CRAVE_USERNAME }}
           CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}
 
-      - name: Build LineageOS 18.1 GSI
+      - name: Build LineageOS 18.1 GSI with Heartbeat
         run: |
           cd $PROJECTFOLDER
           
@@ -176,7 +176,8 @@ jobs:
             BUILD_TARGETS="${{ github.event.inputs.BUILD_VARIANT }}"
           fi
 
-          crave run --no-patch $CLEAN_FLAG "
+          # 把 crave run 的脚本内容写入临时文件，方便后台执行
+          cat > /tmp/crave_build_commands.sh << 'BUILDCOMMANDS'
           echo '============================================'
           echo 'LineageOS 18.1 Treble Buildbot'
           echo 'Strategy: Git clone custom files + skip failed patches'
@@ -252,7 +253,7 @@ jobs:
           echo ''
           echo '>>> Making apply_patches.sh fault-tolerant...'
           sed -i 's/^set -e/set +e/' lineage_build_unified/apply_patches.sh
-          sed -i 's/exit 1/echo \"  -> Skipping failed patch, continuing...\"/' lineage_build_unified/apply_patches.sh
+          sed -i 's/exit 1/echo "  -> Skipping failed patch, continuing..."/' lineage_build_unified/apply_patches.sh
           echo 'Done - failed patches will be skipped'
 
           echo ''
@@ -261,17 +262,17 @@ jobs:
 
           echo '>>> Running build script...'
           bash lineage_build_unified/buildbot_unified.sh treble ${BUILD_TARGETS}
-          BUILD_EXIT_CODE=\$?
+          BUILD_EXIT_CODE=$?
 
           echo ''
           echo '============================================'
           echo '>>> Checking for generated images...'
           echo '============================================'
           if ls ~/build-output/lineage-*.img 2>/dev/null; then
-            IMG_COUNT=\$(ls ~/build-output/lineage-*.img 2>/dev/null | wc -l)
-            echo \"Found \${IMG_COUNT} GSI image(s)\"
+            IMG_COUNT=$(ls ~/build-output/lineage-*.img 2>/dev/null | wc -l)
+            echo "Found ${IMG_COUNT} GSI image(s)"
             for img in ~/build-output/lineage-*.img; do
-              echo \"  \$(basename \$img) - \$(du -h \$img | cut -f1)\"
+              echo "  $(basename $img) - $(du -h $img | cut -f1)"
             done
             echo ''
             echo '>>> Copying images to out/ for upload scripts...'
@@ -287,10 +288,29 @@ jobs:
 
           echo ''
           echo '============================================'
-          echo 'Build completed with exit code: '\$BUILD_EXIT_CODE
+          echo "Build completed with exit code: $BUILD_EXIT_CODE"
           echo '============================================'
-          exit \$BUILD_EXIT_CODE
-          "
+          exit $BUILD_EXIT_CODE
+          BUILDCOMMANDS
+
+          # 后台执行 crave run，日志写到临时文件
+          crave run --no-patch $CLEAN_FLAG -- bash /tmp/crave_build_commands.sh > /tmp/build_full.log 2>&1 &
+          CRAVE_PID=$!
+
+          # 心跳循环：每 60 秒输出一次，保持 GitHub runner 活跃
+          while kill -0 $CRAVE_PID 2>/dev/null; do
+            echo "=== Heartbeat $(date '+%Y-%m-%d %H:%M:%S') ==="
+            tail -5 /tmp/build_full.log 2>/dev/null || echo "(waiting for output...)"
+            sleep 60
+          done
+
+          wait $CRAVE_PID
+          BUILD_EXIT_CODE=$?
+
+          # 输出完整日志
+          cat /tmp/build_full.log
+
+          exit $BUILD_EXIT_CODE
         timeout-minutes: 1440
 
       - name: Copy artifacts to out/ for upload
