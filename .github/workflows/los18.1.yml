@@ -37,6 +37,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y tmux
+
       - name: Configure the 'crave' environment
         run: |
           if [ "${DCDEVSPACE}" == "1" ]; then
@@ -65,6 +66,7 @@ jobs:
             echo 'Runner Started'
           fi
           "
+
   build:
     name: Build LineageOS 18.1 GSI
     needs: Start-Runner
@@ -81,6 +83,7 @@ jobs:
           echo "Clean Build: ${{ github.event.inputs.CLEAN_BUILD }}"
           echo "Strategy: Git clone custom files + skip failed patches"
           echo "::endgroup::"
+
       - name: Telegram Notification - Build Started
         continue-on-error: true
         uses: xinthink/action-telegram@v1.1
@@ -94,6 +97,7 @@ jobs:
         run: |
           find . -maxdepth 1 -type f -delete 2>/dev/null || true
           find . -maxdepth 1 -type l -delete 2>/dev/null || true
+
       - name: Setup Project Directory
         run: |
           PROJECTFOLDER="/crave-devspaces/Lineage18"
@@ -113,11 +117,13 @@ jobs:
             echo "Destroying existing clone..."
             crave clone destroy -y $PROJECTFOLDER || echo "Error removing $PROJECTFOLDER"
           fi
+
           if [ "${DCDEVSPACE}" == "1" ]; then
             crave clone create --projectID 85 $PROJECTFOLDER || echo "Crave clone create failed!"
           else
             mkdir -p $PROJECTFOLDER
           fi
+
       - name: Checkout Repository
         uses: actions/checkout@v4
 
@@ -125,6 +131,7 @@ jobs:
         run: |
           git config --global user.name "${{ github.actor }}"
           git config --global user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+
       - name: Configure Crave Environment
         run: |
           cd $PROJECTFOLDER
@@ -162,11 +169,13 @@ jobs:
           if [ "${{ github.event.inputs.CLEAN_BUILD }}" == "yes" ]; then
             CLEAN_FLAG="--clean"
           fi
+
           if [ "${{ github.event.inputs.BUILD_VARIANT }}" == "all" ]; then
             BUILD_TARGETS="32B 32BO A64B A64BG A64BO 64B 64BG"
           else
             BUILD_TARGETS="${{ github.event.inputs.BUILD_VARIANT }}"
           fi
+
           crave run --no-patch $CLEAN_FLAG "
           echo '============================================'
           echo 'LineageOS 18.1 Treble Buildbot'
@@ -174,11 +183,14 @@ jobs:
           echo 'Building variant(s): ${BUILD_TARGETS}'
           echo '============================================'
           echo ''
+
           echo '>>> Installing real libncurses5 and libtinfo5 (Ubuntu 20.04 binaries)...'
           sudo apt-get update -qq 2>/dev/null || true
           sudo apt-get install -y -qq wget 2>/dev/null || true
+
           wget -q http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.2-0ubuntu2_amd64.deb -O /tmp/libtinfo5.deb
           wget -q http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.2-0ubuntu2_amd64.deb -O /tmp/libncurses5.deb
+
           sudo dpkg --force-depends -i /tmp/libtinfo5.deb /tmp/libncurses5.deb 2>/dev/null || {
             echo 'dpkg failed, extracting manually...'
             dpkg-deb -x /tmp/libtinfo5.deb /tmp/libtinfo5_extract
@@ -188,54 +200,69 @@ jobs:
             sudo cp /tmp/libncurses5_extract/usr/lib/x86_64-linux-gnu/libncurses.so.5* /usr/lib/x86_64-linux-gnu/
             sudo cp /tmp/libncurses5_extract/lib/x86_64-linux-gnu/libncurses.so.5* /usr/lib/x86_64-linux-gnu/ 2>/dev/null || true
           }
+
           if [ -f /usr/lib/x86_64-linux-gnu/libncurses.so.5 ]; then
             echo 'libncurses.so.5 installed successfully'
           else
             echo 'ERROR: libncurses.so.5 still missing!'
           fi
+
           rm -f /tmp/libtinfo5.deb /tmp/libncurses5.deb
           echo 'Dependency fix complete'
+
           echo ''
           echo '>>> Cloning treble_experimentations...'
           rm -rf ~/treble_experimentations 2>/dev/null || true
           git clone https://github.com/AndyCGYan/treble_experimentations ~/treble_experimentations
+
           echo '>>> Initializing LineageOS 18.1 repository...'
           repo init -u https://github.com/LineageOS/android.git -b lineage-18.1 --depth=1
+
           echo ''
           echo '>>> Cloning lineage_build_unified...'
           rm -rf lineage_build_unified 2>/dev/null || true
           git clone https://github.com/AndyCGYan/lineage_build_unified lineage_build_unified -b lineage-18.1
+
           echo '>>> Cloning custom files from amaxsky/los18.1gsi...'
           rm -rf /tmp/los18gsi 2>/dev/null || true
           git clone --depth=1 https://github.com/amaxsky/los18.1gsi.git /tmp/los18gsi
+
           echo '>>> Copying buildbot_unified.sh...'
           cp /tmp/los18gsi/buildbot_unified.sh lineage_build_unified/buildbot_unified.sh
           chmod +x lineage_build_unified/buildbot_unified.sh
           echo 'buildbot_unified.sh copied'
+
           echo '>>> Copying TouchInputMapper.cpp...'
           mkdir -p frameworks/native/services/inputflinger/reader/mapper/
           cp /tmp/los18gsi/TouchInputMapper.cpp frameworks/native/services/inputflinger/reader/mapper/TouchInputMapper.cpp
           echo 'TouchInputMapper.cpp copied'
+
           rm -rf /tmp/los18gsi
+
           echo '>>> Verifying files...'
           ls -la lineage_build_unified/buildbot_unified.sh
           wc -l lineage_build_unified/buildbot_unified.sh
           head -3 lineage_build_unified/buildbot_unified.sh
           ls -la frameworks/native/services/inputflinger/reader/mapper/TouchInputMapper.cpp
+
           echo '>>> Cloning lineage_patches_unified (fresh)...'
           rm -rf lineage_patches_unified 2>/dev/null || true
           git clone https://github.com/AndyCGYan/lineage_patches_unified lineage_patches_unified -b lineage-18.1
+
           echo ''
           echo '>>> Making apply_patches.sh fault-tolerant...'
           sed -i 's/^set -e/set +e/' lineage_build_unified/apply_patches.sh
           sed -i 's/exit 1/echo \"  -> Skipping failed patch, continuing...\"/' lineage_build_unified/apply_patches.sh
           echo 'Done - failed patches will be skipped'
+
           echo ''
           export BUILD_USERNAME=crave_gsi
           export BUILD_HOSTNAME=crave
+
           echo '>>> Running build script...'
           bash lineage_build_unified/buildbot_unified.sh treble ${BUILD_TARGETS}
           BUILD_EXIT_CODE=\$?
+
           echo ''
           echo '============================================'
           echo '>>> Checking for generated images...'
@@ -257,6 +284,7 @@ jobs:
             echo 'Contents of ~/build-output/:'
             ls -la ~/build-output/ 2>/dev/null || echo '(directory empty or missing)'
           fi
+
           echo ''
           echo '============================================'
           echo 'Build completed with exit code: '\$BUILD_EXIT_CODE
@@ -280,6 +308,7 @@ jobs:
             echo 'No artifacts found in ~/build-output/'
           fi
           "
+
       - name: Telegram Notification - Build Status
         if: ${{ success() || cancelled() || failure() }}
         continue-on-error: true
@@ -295,6 +324,7 @@ jobs:
         run: |
           cd $PROJECTFOLDER
           crave stop --all
+
       - name: Upload Build Artifacts to GitHub
         continue-on-error: true
         run: |
@@ -303,6 +333,7 @@ jobs:
           crave push token.txt -d $(crave ssh -- pwd | grep -v Select | sed -s 's/\r//g')/
           NOW=$(date '+%Y%m%d')
           crave ssh -- "export GH_UPLOAD_LIMIT="${{ secrets.GH_UPLOAD_LIMIT }}"; bash /opt/crave/github-actions/upload.sh '${{ github.run_id }}' 'LineageOS 18.1 GSI $NOW' '${{ github.repository }}' '${{ github.run_id }}' '${{ secrets.EXTRA_FILES }}'"
+
       - name: Display Error Log if Build Failed
         if: ${{ failure() }}
         run: |
@@ -314,12 +345,14 @@ jobs:
             cat out/error.log
             echo "::endgroup::"
           fi
+
       - name: Upload to Telegram
         continue-on-error: true
         run: |
           cd $PROJECTFOLDER
           NOW=$(date '+%Y%m%d')
           crave ssh -- "export TG_UPLOAD_LIMIT="${{ secrets.TG_UPLOAD_LIMIT }}"; bash /opt/crave/telegram/upload.sh 'LineageOS 18.1 GSI $NOW' '${{ secrets.EXTRA_FILES }}'"
+
       - name: Clean Up Crave Clone
         if: ${{ always() }}
         run: |
