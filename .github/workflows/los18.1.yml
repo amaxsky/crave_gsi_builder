@@ -331,8 +331,7 @@ jobs:
           cd $PROJECTFOLDER
           echo "${{ secrets.GITHUB_TOKEN }}" > token.txt
           crave push token.txt -d $(crave ssh -- pwd | grep -v Select | sed -s 's/\r//g')/
-          NOW=$(date '+%Y%m%d')
-          crave ssh -- "export GH_UPLOAD_LIMIT="${{ secrets.GH_UPLOAD_LIMIT }}"; bash /opt/crave/github-actions/upload.sh '${{ github.run_id }}' 'LineageOS 18.1 GSI $NOW' '${{ github.repository }}' '${{ github.run_id }}' '${{ secrets.EXTRA_FILES }}'"
+          crave ssh -- "export GH_UPLOAD_LIMIT="${{ secrets.GH_UPLOAD_LIMIT }}"; bash /opt/crave/github-actions/upload.sh '${{ github.run_id }}' '${{ github.event.inputs.BUILD_VARIANT }}' '${{ github.repository }}' 'LineageOS18.1-${{ github.run_id }}' '${{ secrets.EXTRA_FILES }}'"
 
       - name: Display Error Log if Build Failed
         if: ${{ failure() }}
