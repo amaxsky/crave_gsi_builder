@@ -243,7 +243,7 @@ jobs:
           ls -la lineage_build_unified/buildbot_unified.sh
           wc -l lineage_build_unified/buildbot_unified.sh
           head -3 lineage_build_unified/buildbot_unified.sh
-          ls -la frameworks/native/services/inputflinger/reader/mapper/TouchInputMapper.cpp
+          ls -la frameworks/native/services/inputflinger/reader/mapper/
 
           echo '>>> Cloning lineage_patches_unified (fresh)...'
           rm -rf lineage_patches_unified 2>/dev/null || true
