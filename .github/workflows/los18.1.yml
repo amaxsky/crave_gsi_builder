@@ -257,8 +257,8 @@ jobs:
           echo 'Done - failed patches will be skipped'
 
           echo ''
-          export BUILD_USERNAME=crave_gsi
-          export BUILD_HOSTNAME=crave
+          export BUILD_USERNAME=github
+          export BUILD_HOSTNAME=azure
 
           echo '>>> Running build script...'
           bash lineage_build_unified/buildbot_unified.sh treble ${BUILD_TARGETS}
