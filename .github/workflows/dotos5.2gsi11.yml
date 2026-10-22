@@ -226,7 +226,7 @@ jobs:
           echo '>>> Downloading TouchInputMapper.cpp...'
           mkdir -p frameworks/native/services/inputflinger/reader/mapper/
           TOUCH_FILE='frameworks/native/services/inputflinger/reader/mapper/TouchInputMapper.cpp'
-          TOUCH_URL='https://github.com/amaxsky/los18.1gsi/raw/refs/heads/main/TouchInputMapper.cpp'
+          TOUCH_URL='https://github.com/amaxsky/android-11.0.0_r48/raw/refs/heads/main/TouchInputMapper.cpp'
           rm -f \$TOUCH_FILE
           curl -fL --retry 3 --retry-delay 3 -o \$TOUCH_FILE \$TOUCH_URL || true
           if [ -s \$TOUCH_FILE ] && grep -qE 'TouchInputMapper|#include' \$TOUCH_FILE; then
