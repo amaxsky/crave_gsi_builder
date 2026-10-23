@@ -178,6 +178,9 @@ jobs:
           fi
 
           crave run --no-patch $CLEAN_FLAG "
+          set -eE
+          trap 'echo \"ERROR: Build failed at line \$LINENO\"' ERR
+
           echo '============================================'
           echo 'dotOS 11 Treble Buildbot'
           echo 'Strategy: Phhusson treble manifest + TouchInputMapper.cpp fix'
@@ -235,29 +238,63 @@ jobs:
             echo 'WARNING: TouchInputMapper.cpp download failed, trying git clone fallback...'
             rm -f \$TOUCH_FILE
             TMP_DIR=\$(mktemp -d)
-            git clone --depth=1 https://github.com/amaxsky/los18.1gsi.git \$TMP_DIR/los18gsi 2>/dev/null && \
-              cp \$TMP_DIR/los18gsi/TouchInputMapper.cpp \$TOUCH_FILE || echo 'ERROR: fallback failed'
+            git clone --depth=1 https://github.com/amaxsky/android-11.0.0_r48.git \$TMP_DIR/r48 2>/dev/null && \
+              cp \$TMP_DIR/r48/TouchInputMapper.cpp \$TOUCH_FILE || echo 'ERROR: fallback failed'
             rm -rf \$TMP_DIR
           fi
 
-          echo '>>> Applying treble patches...'
-          if [ -d .repo/local_manifests/phhusson_treble ]; then
-            cd .repo/local_manifests/phhusson_treble
-            if [ -f apply-patches.sh ]; then
-              bash apply-patches.sh || echo 'WARNING: some treble patches failed, continuing'
-            else
-              echo 'No apply-patches.sh in phhusson treble manifest, skipping'
+          echo '>>> Generating treble device makefiles...'
+          if [ -d device/phh/treble ]; then
+            cd device/phh/treble
+            git clean -fdx 2>/dev/null || true
+            GEN_OK=0
+            for mk in \
+              ../../../vendor/dotos/config/common_full_phone.mk \
+              ../../../vendor/dotos/config/common.mk \
+              ../../../vendor/dotos/config/common_full.mk \
+              ../../../vendor/dotos/config/phone.mk
+            do
+              if [ -f \"\$mk\" ]; then
+                echo \"Using product mk: \$mk\"
+                if bash generate.sh \"\$mk\"; then
+                  GEN_OK=1
+                  break
+                fi
+              fi
+            done
+            if [ \"\$GEN_OK\" -eq 0 ]; then
+              echo 'WARNING: No dotOS product mk found, trying AOSP fallback...'
+              if bash generate.sh ../../../build/target/product/gsi_release.mk 2>/dev/null; then
+                GEN_OK=1
+              fi
             fi
+            if [ \"\$GEN_OK\" -eq 0 ]; then
+              echo 'ERROR: generate.sh failed. dotOS may not support GSI build.'
+              exit 1
+            fi
+            echo '>>> Generated makefiles:'
+            ls treble_*.mk 2>/dev/null | head -10 || echo 'WARNING: No treble_*.mk generated!'
             cd ../../..
+          else
+            echo 'ERROR: device/phh/treble not found. dotOS may not support GSI build.'
+            exit 1
           fi
 
           echo ''
+          echo '>>> Listing all available lunch targets...'
+          source build/envsetup.sh &> /dev/null
+          echo '--- lunch targets containing treble/gsi/dot ---'
+          lunch 2>/dev/null | grep -iE 'treble|gsi|dot' || echo '(no matching targets found)'
+          echo '--- full lunch list (first 100 lines) ---'
+          lunch 2>/dev/null | head -100 || echo '(lunch listing failed)'
+          echo '--- end of lunch list ---'
+          echo ''
+
           export BUILD_USERNAME=github
           export BUILD_HOSTNAME=azure
 
           mkdir -p ~/build-output
 
-          # GSI 变体 -> Phhusson lunch target 映射（dotOS 使用 lineage_ 前缀可能不存在，用 treble_ 前缀兜底）
           build_variant() {
             case \"\${1}\" in
               (\"32B\")  TARGET=arm_bvS ;;
@@ -271,12 +308,13 @@ jobs:
             esac
             echo \"Building variant \${1} -> lunch treble_\${TARGET}-userdebug\"
             source build/envsetup.sh &> /dev/null
-            lunch treble_\${TARGET}-userdebug || lunch dot_\${TARGET}-userdebug || {
+            lunch treble_\${TARGET}-userdebug || {
               echo \"ERROR: lunch failed for \${TARGET}\"
               return 1
             }
-            make clean
+            make installclean
             make -j\$(nproc --all) systemimage || return 1
+            make vndk-test-sepolicy || true
             if [ -f \$OUT/system.img ]; then
               cp \$OUT/system.img ~/build-output/dotos-11-\$(date +%Y%m%d)-GSI-\${1}.img
               echo \"Produced: ~/build-output/dotos-11-\$(date +%Y%m%d)-GSI-\${1}.img\"
